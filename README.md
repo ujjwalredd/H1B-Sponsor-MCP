@@ -5,6 +5,8 @@ Employer Information dataset.
 
 Repository: https://github.com/ujjwalredd/H1B-Sponsor-MCP.git
 
+![H1B Sponsor MCP running in Claude Code](docs/images/claude-mcp-demo.png)
+
 This server lets MCP clients answer questions like:
 
 - "Does Stripe appear in the H-1B employer data?"
