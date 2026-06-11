@@ -1,4 +1,4 @@
-# h1b-sponsor-mcp
+# H1B Sponsor MCP
 
 Read-only MCP server for querying H-1B sponsoring employers from the USCIS
 Employer Information dataset.
