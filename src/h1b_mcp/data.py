@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow
 
 from .validation import escape_for_regex
 
@@ -33,6 +34,12 @@ PETITION_COLS = [
     'change_employer_approval', 'change_employer_denial',
     'amended_approval', 'amended_denial',
 ]
+
+REQUIRED_COLS = frozenset({
+    'employer_name', 'fiscal_year', 'state', 'city',
+    'naics_code', 'naics_sector', 'total_approvals', 'total_denials',
+    'total_petitions', 'new_employment_approval', 'continuation_approval',
+})
 
 
 class H1BDataStore:
@@ -53,6 +60,11 @@ class H1BDataStore:
                     self._df = self._load()
         return self._df
 
+    @property
+    def is_ready(self) -> bool:
+        """True if dataset is loaded and ready; does not trigger load."""
+        return self._df is not None
+
     def _load(self) -> pd.DataFrame:
         if not self._path.is_file():
             raise FileNotFoundError(
@@ -62,9 +74,21 @@ class H1BDataStore:
         if self._path.suffix != ".parquet":
             raise ValueError("H1B_DATA_PATH must point to a .parquet file")
         logger.info("loading dataset from %s", self._path)
-        df = pd.read_parquet(self._path)
-        # Defensive: drop any unexpected columns, never mutate in place later
-        df = df.drop(columns=[c for c in ("source_file",) if c in df.columns])
+        try:
+            df = pd.read_parquet(self._path)
+        except (pyarrow.lib.ArrowInvalid, pyarrow.lib.ArrowIOError, Exception) as exc:
+            raise RuntimeError(
+                f"Failed to read dataset at {self._path}: {type(exc).__name__}"
+            ) from exc
+        missing = REQUIRED_COLS - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"Dataset missing required columns: {sorted(missing)}. "
+                "Ensure H1B_DATA_PATH points to the correct parquet file."
+            )
+        # Keep only known columns; drops source_file and any future unknowns.
+        keep = [c for c in df.columns if c in REQUIRED_COLS or c in set(PETITION_COLS)]
+        df = df[keep]
         logger.info("loaded %d rows, FY%d-FY%d", len(df), df.fiscal_year.min(), df.fiscal_year.max())
         return df
 
@@ -78,9 +102,9 @@ class H1BDataStore:
             for k, v in rec.items():
                 if v is pd.NA or (isinstance(v, float) and np.isnan(v)):
                     clean[k] = None
-                elif isinstance(v, (np.integer,)):
+                elif isinstance(v, np.integer):
                     clean[k] = int(v)
-                elif isinstance(v, (np.floating,)):
+                elif isinstance(v, np.floating):
                     clean[k] = round(float(v), 4)
                 else:
                     clean[k] = v
@@ -108,14 +132,14 @@ class H1BDataStore:
         hits = df[df.employer_name.str.contains(pattern, case=False, regex=True, na=False)]
         # Aggregate per employer so one company = one row
         agg = (hits.groupby('employer_name', as_index=False)
-                   .agg(years_active=('fiscal_year', lambda s: sorted(set(int(y) for y in s))),
-                        states=('state', lambda s: sorted(set(s.dropna()))),
+                   .agg(years_active=('fiscal_year', lambda s: sorted(set(int(y) for y in s))[:18]),
+                        states=('state', lambda s: sorted(set(s.dropna()))[:60]),
                         total_approvals=('total_approvals', 'sum'),
                         total_denials=('total_denials', 'sum'),
                         total_petitions=('total_petitions', 'sum'))
                    .sort_values('total_petitions', ascending=False)
                    .head(limit))
-        agg['approval_rate'] = (agg.total_approvals / agg.total_petitions.replace(0, np.nan)).round(4)
+        agg['approval_rate'] = agg.total_approvals / agg.total_petitions.replace(0, np.nan)
         return self._records(agg)
 
     def employer_profile(self, query: str, limit: int = 20) -> dict:
@@ -136,7 +160,7 @@ class H1BDataStore:
                               continuations=('continuation_approval', 'sum'))
                          .sort_values('fiscal_year'))
             yearly['approval_rate'] = (
-                yearly.total_approvals / yearly.total_petitions.replace(0, np.nan)).round(4)
+                yearly.total_approvals / yearly.total_petitions.replace(0, np.nan))
             locations = sub[['city', 'state']].dropna().drop_duplicates().head(limit)
             sectors = sorted(set(sub.naics_sector.dropna()))
             profiles.append({
@@ -160,11 +184,11 @@ class H1BDataStore:
                       total_petitions=('total_petitions', 'sum'),
                       new_employment_approval=('new_employment_approval', 'sum'),
                       continuation_approval=('continuation_approval', 'sum')))
-        agg['approval_rate'] = (agg.total_approvals / agg.total_petitions.replace(0, np.nan)).round(4)
+        agg['approval_rate'] = agg.total_approvals / agg.total_petitions.replace(0, np.nan)
         if metric == 'approval_rate':
             # Require meaningful volume so 1/1 = 100% doesn't top the chart
             agg = agg[agg.total_petitions >= 10]
-        agg = agg.sort_values(metric, ascending=False).head(limit)
+        agg = agg.sort_values(metric, ascending=False, na_position='last').head(limit)
         return self._records(agg)
 
     def yearly_trends(self, state: str | None = None,
@@ -191,7 +215,7 @@ class H1BDataStore:
                       total_petitions=('total_petitions', 'sum'))
                  .sort_values('total_approvals', ascending=False)
                  .head(limit))
-        agg['approval_rate'] = (agg.total_approvals / agg.total_petitions.replace(0, np.nan)).round(4)
+        agg['approval_rate'] = agg.total_approvals / agg.total_petitions.replace(0, np.nan)
         return self._records(agg)
 
     def state_breakdown(self, year: int | None = None,
@@ -205,7 +229,7 @@ class H1BDataStore:
                       total_petitions=('total_petitions', 'sum'))
                  .sort_values('total_approvals', ascending=False)
                  .head(limit))
-        agg['approval_rate'] = (agg.total_approvals / agg.total_petitions.replace(0, np.nan)).round(4)
+        agg['approval_rate'] = agg.total_approvals / agg.total_petitions.replace(0, np.nan)
         return self._records(agg)
 
     def dataset_info(self) -> dict:
@@ -239,5 +263,6 @@ class H1BDataStore:
                 "Approval rate is approvals / (approvals + denials).",
                 "~11% of rows lack a NAICS industry code (mostly older years).",
                 "This information is not legal or immigration advice.",
+                "approval_rate is None when total_petitions is 0.",
             ],
         }

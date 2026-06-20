@@ -19,6 +19,7 @@ Security posture:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 from mcp.server.fastmcp import FastMCP
@@ -34,9 +35,10 @@ from .validation import (
     validate_year,
 )
 
+_log_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
 logging.basicConfig(
     stream=sys.stderr,
-    level=logging.INFO,
+    level=getattr(logging, _log_level, logging.WARNING),
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
 logger = logging.getLogger("h1b_mcp")
@@ -70,7 +72,7 @@ def _guarded(fn, **kwargs):
 
 @mcp.tool()
 def search_employers(query: str, year: int | None = None,
-                     state: str | None = None, limit: int = 20) -> dict | list:
+                     state: str | None = None, limit: int = 20) -> list[dict] | dict:
     """Search H-1B sponsoring employers by (partial) company name.
 
     Returns matching employers with their active years, states, and lifetime
@@ -115,7 +117,7 @@ def employer_profile(query: str, limit: int = 20) -> dict:
 @mcp.tool()
 def top_sponsors(year: int | None = None, state: str | None = None,
                  naics_code: str | None = None,
-                 metric: str = "total_approvals", limit: int = 20) -> dict | list:
+                 metric: str = "total_approvals", limit: int = 20) -> list[dict] | dict:
     """Rank the top H-1B sponsoring employers.
 
     Filter by fiscal year, state, and/or industry; rank by a chosen metric.
@@ -143,7 +145,7 @@ def top_sponsors(year: int | None = None, state: str | None = None,
 
 
 @mcp.tool()
-def yearly_trends(state: str | None = None, naics_code: str | None = None) -> dict | list:
+def yearly_trends(state: str | None = None, naics_code: str | None = None) -> list[dict] | dict:
     """H-1B sponsorship totals per fiscal year (2009-2026).
 
     Returns per-year employer counts, approvals, denials, and approval rates —
@@ -164,7 +166,7 @@ def yearly_trends(state: str | None = None, naics_code: str | None = None) -> di
 
 @mcp.tool()
 def industry_breakdown(year: int | None = None, state: str | None = None,
-                       limit: int = 25) -> dict | list:
+                       limit: int = 25) -> list[dict] | dict:
     """H-1B sponsorship totals by NAICS industry sector.
 
     Which industries sponsor the most H-1B workers. Optionally filter by
@@ -186,7 +188,7 @@ def industry_breakdown(year: int | None = None, state: str | None = None,
 
 @mcp.tool()
 def state_breakdown(year: int | None = None, naics_code: str | None = None,
-                    limit: int = 60) -> dict | list:
+                    limit: int = 60) -> list[dict] | dict:
     """H-1B sponsorship totals by US state.
 
     Which states host the most H-1B sponsoring employers. Optionally filter
@@ -213,11 +215,49 @@ def dataset_info() -> dict:
     Call this when unsure what the data covers, or to caveat an answer
     (e.g. FY2026 is a partial year).
     """
-    return _guarded(_store.dataset_info)
+    return _guarded(lambda: _store.dataset_info())
+
+
+@mcp.tool()
+def health_check() -> dict:
+    """Check server health and dataset readiness.
+
+    Returns status, whether the dataset is loaded, and row/year coverage.
+    Call this to verify the server is operational before running queries,
+    or to pre-warm the dataset cache on startup.
+    """
+    def run():
+        loaded = _store.is_ready
+        if not loaded:
+            # Trigger load and report result
+            try:
+                df = _store.df
+                return {
+                    "status": "ok",
+                    "dataset_loaded": True,
+                    "rows": int(len(df)),
+                    "fiscal_years": f"{int(df.fiscal_year.min())}-{int(df.fiscal_year.max())}",
+                }
+            except Exception as exc:
+                return {"status": "error", "dataset_loaded": False, "detail": str(exc)}
+        df = _store.df
+        return {
+            "status": "ok",
+            "dataset_loaded": True,
+            "rows": int(len(df)),
+            "fiscal_years": f"{int(df.fiscal_year.min())}-{int(df.fiscal_year.max())}",
+        }
+    return _guarded(run)
 
 
 def main() -> None:
     logger.info("starting h1b-sponsors MCP server (stdio)")
+    # Pre-warm dataset so first query doesn't pay cold-start cost.
+    try:
+        _ = _store.df
+        logger.info("dataset pre-loaded successfully")
+    except Exception:
+        logger.exception("dataset failed to load at startup — queries will return errors")
     mcp.run()
 
 

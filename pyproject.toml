@@ -19,10 +19,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
-    "mcp>=1.2.0",
-    "pandas>=2.0",
-    "pyarrow>=14.0",
-    "numpy>=1.24",
+    "mcp>=1.2.0,<2.0",
+    "pandas>=2.0,<3.0",
+    "pyarrow>=14.0,<20.0",
+    "numpy>=1.24,<3.0",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +44,24 @@ packages = ["src/h1b_mcp"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports, undefined names)
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "S",   # flake8-bandit (security)
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "S101",  # assert used in tests
+    "B904",  # raise-without-from-in-except — handled intentionally in _guarded
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
