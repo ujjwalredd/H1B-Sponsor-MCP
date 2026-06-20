@@ -235,8 +235,8 @@ def health_check() -> dict:
                 return {
                     "status": "ok",
                     "dataset_loaded": True,
-                    "rows": int(len(df)),
-                    "fiscal_years": f"{int(df.fiscal_year.min())}-{int(df.fiscal_year.max())}",
+                    "rows": len(df),
+                    "fiscal_years": f"{df.fiscal_year.min()}-{df.fiscal_year.max()}",
                 }
             except Exception as exc:
                 return {"status": "error", "dataset_loaded": False, "detail": str(exc)}
@@ -244,8 +244,8 @@ def health_check() -> dict:
         return {
             "status": "ok",
             "dataset_loaded": True,
-            "rows": int(len(df)),
-            "fiscal_years": f"{int(df.fiscal_year.min())}-{int(df.fiscal_year.max())}",
+            "rows": len(df),
+            "fiscal_years": f"{df.fiscal_year.min()}-{df.fiscal_year.max()}",
         }
     return _guarded(run)
 

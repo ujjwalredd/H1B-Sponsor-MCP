@@ -89,7 +89,8 @@ class H1BDataStore:
         # Keep only known columns; drops source_file and any future unknowns.
         keep = [c for c in df.columns if c in REQUIRED_COLS or c in set(PETITION_COLS)]
         df = df[keep]
-        logger.info("loaded %d rows, FY%d-FY%d", len(df), df.fiscal_year.min(), df.fiscal_year.max())
+        fy_min, fy_max = df.fiscal_year.min(), df.fiscal_year.max()
+        logger.info("loaded %d rows, FY%d-FY%d", len(df), fy_min, fy_max)
         return df
 
     # -- helpers ----------------------------------------------------------
@@ -171,7 +172,7 @@ class H1BDataStore:
                 'lifetime_denials': int(sub.total_denials.sum()),
                 'yearly_history': self._records(yearly),
             })
-        return {'match_count': int(len(names)), 'profiles': profiles}
+        return {'match_count': len(names), 'profiles': profiles}
 
     def top_sponsors(self, year: int | None = None, state: str | None = None,
                      naics_code: str | None = None, metric: str = 'total_approvals',
@@ -201,7 +202,7 @@ class H1BDataStore:
                       total_petitions=('total_petitions', 'sum'),
                       new_employment_approvals=('new_employment_approval', 'sum'))
                  .sort_values('fiscal_year'))
-        agg['approval_rate'] = (agg.total_approvals / agg.total_petitions.replace(0, np.nan)).round(4)
+        agg['approval_rate'] = agg.total_approvals / agg.total_petitions.replace(0, np.nan)
         return self._records(agg)
 
     def industry_breakdown(self, year: int | None = None,
@@ -246,8 +247,8 @@ class H1BDataStore:
                 'https://www.uscis.gov/tools/reports-and-studies/'
                 'h-1b-employer-data-hub'
             ),
-            'rows': int(len(df)),
-            'fiscal_years': f"{int(df.fiscal_year.min())}-{int(df.fiscal_year.max())}",
+            'rows': len(df),
+            'fiscal_years': f"{df.fiscal_year.min()}-{df.fiscal_year.max()}",
             'distinct_employers': int(df.employer_name.nunique()),
             'states_covered': int(df.state.nunique()),
             'naics_sectors': int(df.naics_code.nunique()),
