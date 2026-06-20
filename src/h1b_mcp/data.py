@@ -17,7 +17,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pyarrow
 
 from .validation import escape_for_regex
 
@@ -76,7 +75,7 @@ class H1BDataStore:
         logger.info("loading dataset from %s", self._path)
         try:
             df = pd.read_parquet(self._path)
-        except (pyarrow.lib.ArrowInvalid, pyarrow.lib.ArrowIOError, Exception) as exc:
+        except Exception as exc:
             raise RuntimeError(
                 f"Failed to read dataset at {self._path}: {type(exc).__name__}"
             ) from exc
