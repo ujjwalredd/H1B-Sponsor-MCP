@@ -26,7 +26,7 @@ class TestGuarded:
         assert "error" in result
 
     def test_invalid_naics_returns_error(self):
-        result = server.industry_breakdown(naics_code="99")
+        result = server.state_breakdown(naics_code="99")
         assert isinstance(result, dict)
         assert "error" in result
 
